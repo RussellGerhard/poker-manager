@@ -1,0 +1,64 @@
+#!/usr/bin/env node
+
+// Dependencies
+var server = require("../server");
+var debug = require("debug")("poker-manager-server:server");
+var http = require("http");
+
+// Get port from env or use default
+var port = normalizePort(process.env.PORT || 3000);
+server.set("port", port);
+
+// Create HTTP server
+var http_server = http.createServer(server);
+
+// Listen on port
+http_server.listen(port);
+http_server.on("error", onError);
+http_server.on("listening", onListening);
+
+function normalizePort(val) {
+  // Parse input from env var
+  var port = parseInt(val, 10);
+
+  if (isNaN(port)) {
+    return val;
+  }
+
+  if (port >= 0) {
+    return port;
+  }
+
+  // No valid port number
+  return false;
+}
+
+// Listen for http_server error
+function onError(error) {
+  if (error.syscall !== "listen") {
+    throw error;
+  }
+
+  var bind = typeof port === "string" ? "Pipe " + port : "Port " + port;
+
+  // handle specific listening errors
+  switch (error.code) {
+    case "EACCES":
+      console.error(bind + " requires elevated privileges");
+      process.exit(1);
+      break;
+    case "EADDRINUSE":
+      console.error(bind + " is already in use");
+      process.exit(1);
+      break;
+    default:
+      throw error;
+  }
+}
+
+// Event listener for http_server listening
+function onListening() {
+  var addr = http_server.address();
+  var bind = typeof addr === "string" ? "Pipe " + addr : "Port " + addr.port;
+  debug("Listening on " + bind);
+}

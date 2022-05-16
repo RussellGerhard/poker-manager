@@ -1,0 +1,29 @@
+{
+  "name": "poker-manager-server",
+  "version": "1.0.0",
+  "description": "Express backend for poker game management application",
+  "private": true,
+  "scripts": {
+    "start": "node bin/www",
+    "devstart": "DEBUG=poker-manager-server:* nodemon ./bin/www",
+    "serverstart": "DEBUG=poker-manager-server:* npm run devstart"
+  },
+  "author": "Russell Gerhard",
+  "license": "ISC",
+  "devDependencies": {
+    "nodemon": "^2.0.16"
+  },
+  "dependencies": {
+    "async": "^3.2.3",
+    "bcrypt": "^5.0.1",
+    "connect-mongo": "^4.6.0",
+    "debug": "^4.3.4",
+    "dotenv": "^16.0.1",
+    "express": "^4.18.1",
+    "express-session": "^1.17.3",
+    "express-validator": "^6.14.0",
+    "http-errors": "^2.0.0",
+    "mongoose": "^6.3.3",
+    "morgan": "^1.10.0"
+  }
+}
