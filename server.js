@@ -5,8 +5,20 @@ var logger = require("morgan");
 var dotenv = require("dotenv").config();
 var MongoStore = require("connect-mongo");
 var session = require("express-session");
+var cors = require("cors");
 
+// Import routers
+var indexRouter = require("./routes/index");
+var userRouter = require("./routes/users");
+
+// Create express app
 var server = express();
+
+// Use cors in dev
+// Needed for cross-origin (serving front and back from different ports)
+if (process.env.ENVIRONMENT == "DEV") {
+  server.use(cors());
+}
 
 // Set up mongoose connection to MongoDB
 var mongoose = require("mongoose");
@@ -29,7 +41,9 @@ server.use(express.urlencoded({ extended: false }));
 // Specify root folder for static website assets
 server.use(express.static(path.join(__dirname, "public")));
 
-// TODO: ROUTING
+// Routes
+server.use("/", indexRouter);
+server.use("/", userRouter);
 
 // Catch 404 and forward to error handler
 server.use(function (req, res, next) {
