@@ -1,6 +1,106 @@
 const { body, validationResult } = require("express-validator");
 var User = require("../models/user");
+var Game = require("../models/game");
 var async = require("async");
+
+// Get user from id
+exports.user_get = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.params.user_id);
+    res.json({ status: "ok", user: user });
+  } catch (err) {
+    return next(err);
+  }
+};
+
+// Get list of games associated with user
+exports.game_list_get = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.params.user_id);
+
+    // Get a 2-element list of name and link for each game
+    const game_links = [];
+    for (game_id of user.games) {
+      const game = await Game.findById(game_id);
+      game_links.push({
+        name: game.name,
+        url: game.url,
+      });
+    }
+
+    // Respond with names and links of games
+    res.json({ status: "ok", games: game_links });
+    return;
+  } catch (err) {
+    return next(err);
+  }
+};
+
+// Handle user login post
+exports.login_post = [
+  // Validate and sanitize input
+  body("email", "Email cannot be empty").trim().isLength({ min: 1 }).escape(),
+  body("password", "Password cannot be empty")
+    .trim()
+    .isLength({ min: 1 })
+    .escape(),
+  async (req, res, next) => {
+    // Get validation errors
+    var validation_errors = validationResult(req);
+    // Check for validation errors
+    // Return these before performing expensive DB lookups
+    if (!validation_errors.isEmpty()) {
+      res.json({ status: "error", errors: validation_errors.errors });
+      return;
+    }
+
+    // Check if user can authenticate
+    User.getAuthenticated(
+      req.body.email,
+      req.body.password,
+      (err, user, reason) => {
+        // Handle serious authentication error
+        if (err) {
+          return next(err);
+        }
+
+        // Check for user
+        if (user) {
+          res.json({ status: "ok", user: user });
+          return;
+        }
+
+        // Check for auth failure reason
+        // Create error is there is a reason
+        var reasons = User.failedLogin;
+        var error = {};
+        switch (reason) {
+          case reasons.NOT_FOUND:
+            error.msg = "Sorry, we couldn't find an account with that email";
+            error.param = "email";
+            break;
+          case reasons.PASSWORD_INCORRECT:
+            error.msg = "Sorry, that password is incorrect";
+            error.param = "password";
+            break;
+          case reasons.MAX_ATTEMPTS:
+            const LOCK_TIME_MINUTES = parseInt(process.env.LOCK_TIME) / 60000;
+            const plural = LOCK_TIME_MINUTES > 1 ? true : false;
+            error.msg = `Sorry, maximum login attempts reached, try again in ${LOCK_TIME_MINUTES} minute${
+              plural ? "s" : ""
+            }`;
+            error.param = "";
+            break;
+        }
+        error.value = "";
+        error.location = "body";
+        validation_errors.errors.push(error);
+        res.json({ status: "error", errors: validation_errors.errors });
+        return;
+      }
+    );
+  },
+];
 
 // Handle user signup post
 exports.signup_post = [
@@ -58,6 +158,7 @@ exports.signup_post = [
         if (err) {
           return next(err);
         }
+
         // Add error message if email already in use
         if (results.email_user) {
           validation_errors.errors.push({

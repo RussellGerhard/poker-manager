@@ -3,13 +3,10 @@ var createError = require("http-errors");
 var path = require("path");
 var logger = require("morgan");
 var dotenv = require("dotenv").config();
-var MongoStore = require("connect-mongo");
-var session = require("express-session");
 var cors = require("cors");
 
 // Import routers
-var indexRouter = require("./routes/index");
-var userRouter = require("./routes/users");
+var apiRouter = require("./routes/api");
 
 // Create express app
 var server = express();
@@ -42,8 +39,7 @@ server.use(express.urlencoded({ extended: false }));
 server.use(express.static(path.join(__dirname, "public")));
 
 // Routes
-server.use("/", indexRouter);
-server.use("/", userRouter);
+server.use("/api", apiRouter);
 
 // Catch 404 and forward to error handler
 server.use(function (req, res, next) {
@@ -53,7 +49,17 @@ server.use(function (req, res, next) {
 // Custom error handler
 server.use(function (err, req, res, next) {
   // If no 404, then respond with 500: internal server error
-  res.status(err.status || 500);
+  res.json({
+    status: "error",
+    errors: [
+      {
+        value: "",
+        msg: "Sorry, there was an internal error! Please try again.",
+        param: "interal-error",
+        location: "",
+      },
+    ],
+  });
   // TODO: Send more info to client
 });
 
