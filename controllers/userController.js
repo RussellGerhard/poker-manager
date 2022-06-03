@@ -1,39 +1,26 @@
 const { body, validationResult } = require("express-validator");
 var User = require("../models/user");
-var Game = require("../models/game");
 var async = require("async");
 
-// Get user from id
-exports.user_get = async (req, res, next) => {
-  try {
-    const user = await User.findById(req.params.user_id);
-    res.json({ status: "ok", user: user });
-  } catch (err) {
-    return next(err);
+// Check for logged in user
+exports.login_get = async (req, res, next) => {
+  if (req.session.user) {
+    req.session.user.password = null;
+    res.json({ loggedIn: true, user: req.session.user });
+  } else {
+    res.json({ loggedIn: false });
   }
 };
 
-// Get list of games associated with user
-exports.game_list_get = async (req, res, next) => {
+// Handle user logout
+exports.logout_post = async (req, res, next) => {
   try {
-    const user = await User.findById(req.params.user_id);
-
-    // Get a 2-element list of name and link for each game
-    const game_links = [];
-    for (game_id of user.games) {
-      const game = await Game.findById(game_id);
-      game_links.push({
-        name: game.name,
-        url: game.url,
-      });
-    }
-
-    // Respond with names and links of games
-    res.json({ status: "ok", games: game_links });
-    return;
+    req.session.destroy();
   } catch (err) {
     return next(err);
   }
+  res.clearCookie(process.env.SESS_NAME);
+  res.json({ status: "ok" });
 };
 
 // Handle user login post
@@ -66,6 +53,9 @@ exports.login_post = [
 
         // Check for user
         if (user) {
+          user.password = null;
+          req.session.user = user;
+          console.log(req.session.user);
           res.json({ status: "ok", user: user });
           return;
         }

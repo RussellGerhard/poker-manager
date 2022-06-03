@@ -2,6 +2,29 @@ const { body, validationResult } = require("express-validator");
 const Game = require("../models/game");
 const User = require("../models/user");
 
+// Get list of games associated with user
+exports.game_list_get = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.params.user_id);
+
+    // Get a 2-element list of name and link for each game
+    const game_links = [];
+    for (game_id of user.games) {
+      const game = await Game.findById(game_id);
+      game_links.push({
+        name: game.name,
+        url: game.url,
+      });
+    }
+
+    // Respond with names and links of games
+    res.json({ status: "ok", games: game_links });
+    return;
+  } catch (err) {
+    return next(err);
+  }
+};
+
 exports.game_create_post = [
   // Validate and sanitize
   body(
