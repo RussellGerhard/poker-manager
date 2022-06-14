@@ -218,7 +218,7 @@ exports.notifications_get = async (req, res, next) => {
   try {
     const notifications = await Notification.find({
       recipient: req.session.user._id,
-    });
+    }).sort({ date: "desc" });
     res.json({ status: "ok", notifications: notifications });
   } catch (err) {
     return next(err);

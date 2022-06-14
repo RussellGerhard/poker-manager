@@ -1,5 +1,6 @@
 const { body, validationResult } = require("express-validator");
 const Game = require("../models/game");
+const Session = require("../models/session");
 const User = require("../models/user");
 const Notification = require("../models/notification");
 const Post = require("../models/post");
@@ -8,7 +9,9 @@ const he = require("he");
 // Get details of game
 exports.game_details_get = async (req, res, next) => {
   try {
-    const game = await Game.findById(req.params.gameId).populate("members");
+    const game = await Game.findById(req.params.gameId)
+      .populate(["members", "session"])
+      .sort({ members: 1 });
     const isAdmin = game.admin.equals(req.session.user._id);
     res.json({ status: "ok", game: game, isAdmin: isAdmin });
   } catch (err) {
@@ -19,9 +22,9 @@ exports.game_details_get = async (req, res, next) => {
 // Get posts of game message board
 exports.game_posts_get = async (req, res, next) => {
   try {
-    const posts = await Post.find({ game: req.params.gameId }).populate(
-      "author"
-    );
+    const posts = await Post.find({ game: req.params.gameId })
+      .populate("author")
+      .sort({ date: "desc" });
     res.json({ status: "ok", posts: posts });
   } catch (err) {
     return next(err);
@@ -54,6 +57,38 @@ exports.game_list_get = async (req, res, next) => {
   }
 };
 
+// Post an update to member's profit
+exports.update_profit_post = [
+  body("gameId").escape(),
+  body("memberId").escape(),
+  body("profit").isNumeric().escape(),
+  async (req, res, next) => {
+    // Get validation errors
+    const validation_errors = validationResult(req);
+
+    // Send back errors
+    if (!validation_errors.isEmpty()) {
+      res.json({ status: "error", errors: validation_errors.errors });
+      return;
+    }
+
+    try {
+      // Clean profit to dollars and cents amount
+      const profit = Number(req.body.profit).toFixed(2);
+
+      // Update profit
+      await Game.findByIdAndUpdate(req.body.gameId, {
+        $set: {
+          [`member_profit_map.${req.body.memberId}`]: profit,
+        },
+      });
+      res.json({ status: "ok" });
+    } catch (err) {
+      return next(err);
+    }
+  },
+];
+
 // Post a new message to the game message board
 exports.new_message_post = [
   // Val and sanitize
@@ -78,8 +113,6 @@ exports.new_message_post = [
 
       if (!game.admin.equals(req.session.user._id)) {
         const posts = await Post.find({ author: req.session.user._id });
-        console.log(posts);
-        console.log(posts.length);
         if (posts.length > 1) {
           res.json({
             status: "error",
@@ -93,7 +126,6 @@ exports.new_message_post = [
           return;
         }
       }
-      console.log("hey");
       // Create new post and save it
       const post = new Post({
         author: req.session.user._id,
@@ -251,6 +283,103 @@ exports.add_member_post = [
   },
 ];
 
+// Create and update session
+exports.session_form_post = [
+  // Validate and sanitize
+  body(
+    "date",
+    "Required input date must be less than 20 lettes, numbers, periods, and/or spaces (not at start or end)"
+  )
+    .trim()
+    .isLength({ min: 1, max: 20 })
+    .matches(/^[A-Za-z0-9\. ]*$/)
+    .escape(),
+  body(
+    "time",
+    "Required input time must be less than 20 letters, numbers, colons, and/or spaces (not at start or end)"
+  )
+    .trim()
+    .isLength({ min: 1, max: 20 })
+    .matches(/^[A-Za-z0-9: ]*$/)
+    .escape(),
+  body("address", "Required input address must be less than 30 characters long")
+    .trim()
+    .isLength({ min: 1, max: 30 })
+    .escape(),
+  async (req, res, next) => {
+    // Get validation errors
+    var validation_errors = validationResult(req);
+
+    // Send back errors
+    if (!validation_errors.isEmpty()) {
+      res.json({ status: "error", errors: validation_errors.errors });
+      return;
+    }
+    // Using form to create new session
+    if (!req.body.sessionId) {
+      // Check that game doesn't already have session
+      try {
+        const game = await Game.findById(req.body.gameId);
+        console.log(game);
+
+        if (game.session) {
+          validation_errors.errors.push({
+            value: "",
+            msg: "This game already has a session in progress",
+            param: "session-exists",
+            location: "body",
+          });
+
+          res.json({ status: "error", errors: validation_errors.errors });
+          return;
+        }
+      } catch (err) {
+        return next(err);
+      }
+
+      // Create the session
+      const session = new Session({
+        date: req.body.date,
+        time: req.body.time,
+        address: req.body.address,
+      });
+
+      // Save session
+      session.save((err) => {
+        if (err) {
+          return next(err);
+        }
+      });
+
+      // Add session to game
+      Game.findByIdAndUpdate(
+        req.body.gameId,
+        { $set: { session: session._id } },
+        (err) => {
+          if (err) {
+            return next(err);
+          }
+          res.json({ status: "ok", gameId: req.body.gameId });
+        }
+      );
+    } else {
+      try {
+        // Using form to update existing session
+        await Session.findByIdAndUpdate(req.body.sessionId, {
+          $set: {
+            date: req.body.date,
+            time: req.body.time,
+            address: req.body.address,
+          },
+        });
+        res.json({ status: "ok", gameId: req.body.gameId });
+      } catch (err) {
+        return next(err);
+      }
+    }
+  },
+];
+
 // Create and update game
 exports.game_form_post = [
   // Validate and sanitize
@@ -273,26 +402,6 @@ exports.game_form_post = [
   body("stakes", "Stakes must be less than 20 characters long")
     .trim()
     .isLength({ max: 20 })
-    .escape(),
-  body(
-    "date",
-    "Date must be less than 20 lettes, numbers, periods, and/or spaces (not at start or end)"
-  )
-    .trim()
-    .isLength({ max: 20 })
-    .matches(/^[A-Za-z0-9\. ]*$/)
-    .escape(),
-  body(
-    "time",
-    "Time type must be less than 20 letters, numbers, colons, and/or spaces (not at start or end)"
-  )
-    .trim()
-    .isLength({ max: 20 })
-    .matches(/^[A-Za-z0-9: ]*$/)
-    .escape(),
-  body("address", "Time type must be less than 30 characters long")
-    .trim()
-    .isLength({ max: 30 })
     .escape(),
   async (req, res, next) => {
     // Get validation errors
@@ -363,7 +472,6 @@ exports.game_form_post = [
     } else {
       try {
         // Using form to update existing game
-        console.log("update gameid", req.body.gameId);
         await Game.findByIdAndUpdate(req.body.gameId, {
           $set: {
             name: req.body.name,

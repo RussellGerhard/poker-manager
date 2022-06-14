@@ -37,6 +37,10 @@ router.get("/notifications", user_controller.notifications_get);
 // POST notifications clear
 router.post("/clear_notifications", user_controller.clear_notifications_post);
 
+// TODO VERIFY ADMIN
+// POST profit update
+router.post("/update_profit", game_controller.update_profit_post);
+
 // GET game list for user
 router.get("/games", game_controller.game_list_get);
 
@@ -49,8 +53,10 @@ router.get("/games/:gameId", game_controller.game_details_get);
 router.get("/posts/:gameId", game_controller.game_posts_get);
 
 // TODO VERIFY MEMBERSHIP
+// POST message create
 router.post("/new_message", game_controller.new_message_post);
 
+// POST message delete
 router.post("/delete_message", game_controller.delete_message_post);
 
 // TODO VERIFY ADMIN
@@ -77,5 +83,13 @@ router.post("/create_game", game_controller.game_form_post);
 // TODO VERIFY ADMIN
 // POST update game
 router.post("/edit_game", game_controller.game_form_post);
+
+// TODO VERIFY ADMIN
+// POST create session
+router.post("/create_session", game_controller.session_form_post);
+
+// TODO VERIFY ADMIN
+// POST update session
+router.post("/edit_session", game_controller.session_form_post);
 
 module.exports = router;

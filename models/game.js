@@ -5,10 +5,7 @@ var GameSchema = new Schema({
   name: { type: String, required: true, maxlength: 25 },
   game_type: { type: String },
   stakes: { type: String },
-  date: { type: String },
-  time: { type: String },
-  address: { type: String },
-  rsvp_list: [{ type: Schema.Types.ObjectId, ref: "User" }],
+  session: { type: Schema.Types.ObjectId, ref: "Session" },
   // There's a better way to do this by populating map keys
   members: [{ type: Schema.Types.ObjectId, ref: "User" }],
   member_profit_map: { type: Map, of: String },
