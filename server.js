@@ -45,7 +45,7 @@ server.use(
     saveUninitialized: false,
     secret: process.env.SESS_SECRET,
     store: MongoStore.create({
-      mongoUrl: `mongodb+srv://${process.env.DB_USERNAME}:${process.env.DB_PASSWORD}@cluster0.zfsde.mongodb.net/test?retryWrites=true&w=majority`,
+      mongoUrl: `mongodb+srv://${process.env.DB_USERNAME}:${process.env.DB_PASSWORD}@cluster0.zfsde.mongodb.net/homeGame?retryWrites=true&w=majority`,
       ttl: 24 * 60 * 60 * 1000,
       autoRemove: "native",
       collectionName: "user_sessions",

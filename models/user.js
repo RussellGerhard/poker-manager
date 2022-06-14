@@ -1,11 +1,15 @@
 var mongoose = require("mongoose");
 var Schema = mongoose.Schema;
-
 var bcrypt = require("bcrypt");
 
 var UserSchema = new Schema({
   // Basic user info
-  username: { type: String, required: true, maxLength: 25 },
+  username: {
+    type: String,
+    required: true,
+    maxLength: 25,
+    index: { unique: true },
+  },
   email: {
     type: String,
     required: true,
@@ -21,9 +25,8 @@ var UserSchema = new Schema({
   // Login attempt counter
   loginAttempts: { type: Number, required: true, default: 0 },
   lockUntil: { type: Number },
-  // Past poker sessions info
+  // Games the user belongs to and total profit
   games: [{ type: Schema.Types.ObjectId, ref: "Game" }],
-  old_sessions: [{ type: Schema.Types.ObjectId, ref: "Session" }],
   profit: { type: Number, default: 0 },
   // Notifications
   notifications: [{ type: Schema.Types.ObjectId, ref: "Notification" }],
@@ -42,7 +45,7 @@ UserSchema.pre("save", async function (next) {
   }
 
   try {
-    // Hash password with salt generated from S_W_F rounds
+    // Hash password with salt generated from SALT_WORK_FACTOR rounds
     var hash = await bcrypt.hash(
       user.password,
       parseInt(process.env.SALT_WORK_FACTOR)
@@ -121,7 +124,7 @@ UserSchema.statics.getAuthenticated = function (email, password, callback) {
     // We found a user, check if locked
     if (user.isLocked) {
       return user.incLoginAttempts(function (err) {
-        // Pass up serious db err from increment
+        // Pass up serious dbre err from increment
         if (err) {
           return callback(err);
         }

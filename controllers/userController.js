@@ -1,6 +1,10 @@
 const { body, validationResult } = require("express-validator");
-var User = require("../models/user");
-var async = require("async");
+const User = require("../models/user");
+const Game = require("../models/game");
+const Notification = require("../models/notification");
+const async = require("async");
+const bcrypt = require("bcrypt");
+const he = require("he");
 
 // Check for logged in user
 exports.login_get = async (req, res, next) => {
@@ -11,6 +15,27 @@ exports.login_get = async (req, res, next) => {
     res.json({ loggedIn: false });
   }
 };
+
+// Check if logged in user input correct password
+exports.password_check_post = [
+  body("password", "Password cannot be empty").isLength({ min: 1 }).escape(),
+  async (req, res, next) => {
+    try {
+      const user = await User.findById(req.session.user._id);
+
+      user.comparePassword(req.body.password, (err, isMatch) => {
+        if (err) {
+          return next(err);
+        }
+
+        res.json({ status: "ok", isMatch: isMatch });
+        return;
+      });
+    } catch (err) {
+      return next(err);
+    }
+  },
+];
 
 // Handle user logout
 exports.logout_post = async (req, res, next) => {
@@ -23,14 +48,198 @@ exports.logout_post = async (req, res, next) => {
   res.json({ status: "ok" });
 };
 
+// Handle email change
+exports.change_email_post = [
+  body("email", "Email cannot be empty").trim().isLength({ min: 1 }).escape(),
+  async (req, res, next) => {
+    // Get validation errors
+    var validation_errors = validationResult(req);
+    if (!validation_errors.isEmpty()) {
+      res.json({ status: "error", errors: validation_errors.errors });
+      return;
+    }
+
+    try {
+      await User.findByIdAndUpdate(req.session.user._id, {
+        $set: {
+          email: req.body.email,
+        },
+      });
+      res.json({ status: "ok" });
+    } catch (err) {
+      return next(err);
+    }
+  },
+];
+
+// Handle username change
+exports.change_username_post = [
+  body("username", "Username cannot be empty")
+    .trim()
+    .isLength({ min: 1 })
+    .escape(),
+  async (req, res, next) => {
+    // Get validation errors
+    var validation_errors = validationResult(req);
+    if (!validation_errors.isEmpty()) {
+      res.json({ status: "error", errors: validation_errors.errors });
+      return;
+    }
+
+    try {
+      // update user
+      await User.findByIdAndUpdate(req.session.user._id, {
+        $set: {
+          username: req.body.username,
+        },
+      });
+
+      // Update session username
+      req.session.user.username = req.body.username;
+
+      // Yield session user in result so context can be set
+      res.json({ status: "ok", user: req.session.user });
+    } catch (err) {
+      return next(err);
+    }
+  },
+];
+
+// Handle password change
+exports.change_password_post = [
+  body("password", "New password cannot be empty")
+    .isLength({ min: 1 })
+    .escape(),
+  async (req, res, next) => {
+    // Get validation errors
+    var validation_errors = validationResult(req);
+    if (!validation_errors.isEmpty()) {
+      res.json({ status: "error", errors: validation_errors.errors });
+      return;
+    }
+
+    try {
+      // hash password
+      var hash = await bcrypt.hash(
+        req.body.password,
+        parseInt(process.env.SALT_WORK_FACTOR)
+      );
+
+      // update user
+      await User.findByIdAndUpdate(req.session.user._id, {
+        $set: {
+          password: hash,
+        },
+      });
+
+      res.json({ status: "ok" });
+    } catch (err) {
+      return next(err);
+    }
+  },
+];
+
+// Delete account
+exports.delete_account_post = async (req, res, next) => {
+  try {
+    // Delete and leave games (based on if user was admin)
+    const user = await User.findById(req.session.user._id);
+    for (gameId of user.games) {
+      const game = await Game.findById(gameId);
+      // If user is admin, delete game
+      if (game.admin.equals(req.session.user._id)) {
+        // Delete the game
+        await Game.findByIdAndDelete(gameId);
+
+        // Delete game from all members' lists and notify them (except admin)
+        for (member of game.members) {
+          await User.findByIdAndUpdate(member, { $pull: { games: gameId } });
+
+          if (!game.admin.equals(member)) {
+            const notification = new Notification({
+              sender: req.session.user._id,
+              recipient: member,
+              game: gameId,
+              label: "Game Deleted",
+              message: `${
+                req.session.user.username
+              } deleted their account, so their poker game, ${he.decode(
+                game.name
+              )}, no longer exists`,
+              date: Date.now(),
+            });
+            await notification.save();
+          }
+        }
+      } else {
+        // Remove user from game members and profit tracking
+        await Game.findByIdAndUpdate(gameId, {
+          $pull: {
+            members: req.session.user._id,
+          },
+          $unset: {
+            [`member_profit_map.${req.session.user._id}`]: "",
+          },
+        });
+
+        // Notify admin
+        const notification = new Notification({
+          sender: req.session.user._id,
+          recipient: game.admin,
+          game: gameId,
+          label: "Game Notice",
+          message: `${
+            req.session.user.username
+          } deleted their account, so they are no longer in your poker game: ${he.decode(
+            game.name
+          )}`,
+          date: Date.now(),
+        });
+
+        await notification.save();
+      }
+    }
+
+    // Destroy session and delete user
+    const userId = req.session.user._id;
+    await req.session.destroy();
+    await User.findByIdAndDelete(userId);
+
+    // Delete session cookie
+    res.clearCookie(process.env.SESS_NAME);
+    res.json({ status: "ok" });
+  } catch (err) {
+    return next(err);
+  }
+};
+
+// Get notifications
+exports.notifications_get = async (req, res, next) => {
+  try {
+    const notifications = await Notification.find({
+      recipient: req.session.user._id,
+    });
+    res.json({ status: "ok", notifications: notifications });
+  } catch (err) {
+    return next(err);
+  }
+};
+
+// Clear notifications
+exports.clear_notifications_post = async (req, res, next) => {
+  try {
+    await Notification.deleteMany({ recipient: req.session.user._id });
+    res.json({ status: "ok" });
+  } catch (err) {
+    return next(err);
+  }
+};
+
 // Handle user login post
 exports.login_post = [
   // Validate and sanitize input
   body("email", "Email cannot be empty").trim().isLength({ min: 1 }).escape(),
-  body("password", "Password cannot be empty")
-    .trim()
-    .isLength({ min: 1 })
-    .escape(),
+  body("password", "Password cannot be empty").isLength({ min: 1 }).escape(),
   async (req, res, next) => {
     // Get validation errors
     var validation_errors = validationResult(req);
@@ -55,7 +264,6 @@ exports.login_post = [
         if (user) {
           user.password = null;
           req.session.user = user;
-          console.log(req.session.user);
           res.json({ status: "ok", user: user });
           return;
         }
@@ -109,10 +317,9 @@ exports.signup_post = [
     "password",
     "Password must be 8 to 20 characters with one uppercase and one lowercase letter, one number, and one symbol"
   )
-    .trim()
     .isStrongPassword()
     .escape(),
-  body("password_conf").trim().escape(),
+  body("password_conf").escape(),
   async (req, res, next) => {
     // Get validation errors
     var validation_errors = validationResult(req);

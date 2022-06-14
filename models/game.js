@@ -3,20 +3,20 @@ var Schema = mongoose.Schema;
 
 var GameSchema = new Schema({
   name: { type: String, required: true, maxlength: 25 },
-  game_type: { type: String, required: true, default: "No Limit Hold'em" },
+  game_type: { type: String },
   stakes: { type: String },
-  date: { type: Date },
-  time: { type: Date },
+  date: { type: String },
+  time: { type: String },
   address: { type: String },
   rsvp_list: [{ type: Schema.Types.ObjectId, ref: "User" }],
+  // There's a better way to do this by populating map keys
   members: [{ type: Schema.Types.ObjectId, ref: "User" }],
+  member_profit_map: { type: Map, of: String },
   admin: { type: Schema.Types.ObjectId, ref: "User" },
-  message_board: [{ type: Schema.Types.ObjectId, ref: "Post" }],
-  locked: { type: Boolean, required: true, default: true },
 });
 
 GameSchema.virtual("url").get(function () {
-  return "/game/" + this._id;
+  return "/games/" + this._id;
 });
 
 module.exports = mongoose.model("Game", GameSchema);
