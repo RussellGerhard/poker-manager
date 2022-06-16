@@ -6,12 +6,24 @@ const Notification = require("../models/notification");
 const Post = require("../models/post");
 const he = require("he");
 
+// DONT CONFUSE req.session (user session for auth) with
+// game.session (upcoming meetup of a poker game), sorry!
+
 // Get details of game
 exports.game_details_get = async (req, res, next) => {
   try {
-    const game = await Game.findById(req.params.gameId)
-      .populate(["members", "session"])
-      .sort({ members: 1 });
+    const game = await Game.findById(req.params.gameId).populate([
+      "members",
+      "session",
+    ]);
+    game.members.sort((a, b) => {
+      // Positive return means a after b
+      // Negative return means b after a
+      // 0 return means original order
+      return (
+        game.member_profit_map.get(b._id) - game.member_profit_map.get(a._id)
+      );
+    });
     const isAdmin = game.admin.equals(req.session.user._id);
     res.json({ status: "ok", game: game, isAdmin: isAdmin });
   } catch (err) {
@@ -39,15 +51,21 @@ exports.game_list_get = async (req, res, next) => {
     // Get a list of games objects
     const game_links = [];
     for (game_id of user.games) {
-      const game = await Game.findById(game_id);
+      const game = await Game.findById(game_id).populate("session");
       game_links.push({
         _id: game._id,
-        admin: game.admin,
-        member_profit_map: game.member_profit_map,
         name: game.name,
+        admin: game.admin,
+        profit: game.member_profit_map.get(user._id),
+        session: game.session,
         url: game.url,
       });
     }
+
+    // Sort games by greatest profit
+    game_links.sort((a, b) => {
+      return b.profit - a.profit;
+    });
 
     // Respond with names and links of games
     res.json({ status: "ok", games: game_links });
@@ -112,7 +130,10 @@ exports.new_message_post = [
       const game = await Game.findById(req.body.gameId);
 
       if (!game.admin.equals(req.session.user._id)) {
-        const posts = await Post.find({ author: req.session.user._id });
+        const posts = await Post.find({
+          game: req.body.gameId,
+          author: req.session.user._id,
+        });
         if (posts.length > 1) {
           res.json({
             status: "error",
@@ -197,6 +218,339 @@ exports.delete_message_post = [
   },
 ];
 
+exports.verify_session_exists = [
+  body("gameId").escape(),
+  async (req, res, next) => {
+    try {
+      const game = await Game.findById(req.body.gameId);
+      if (!game?.session) {
+        res.json({
+          status: "error",
+          errors: [
+            {
+              param: "NoSession",
+              msg: "This game does not have an upcoming session",
+            },
+          ],
+        });
+      } else {
+        next();
+      }
+    } catch (err) {
+      return next(err);
+    }
+  },
+];
+
+// Join session
+exports.join_session_post = [
+  body("gameId").escape(),
+  async (req, res, next) => {
+    try {
+      const game = await Game.findById(req.body.gameId).populate(["session"]);
+      if (game.session.rsvp_map.get(req.session.user._id) === "accepted") {
+        res.json({
+          status: "error",
+          errors: [
+            {
+              param: "Joined",
+              msg: "You have already joined the session",
+            },
+          ],
+        });
+        return;
+      }
+
+      const invite = await Notification.findOneAndDelete({
+        recipient: req.session.user._id,
+        label: "Session Invite",
+        game: req.body.gameId,
+      });
+
+      // Members need invite to join
+      if (!invite && req.session.user._id != game.admin) {
+        res.json({
+          status: "error",
+          errors: [
+            {
+              param: "NoSessionInvite",
+              msg: "You do not have an invite to this session",
+            },
+          ],
+        });
+        return;
+      }
+
+      // Join the session
+      await Session.findByIdAndUpdate(game.session._id, {
+        $set: {
+          [`rsvp_map.${req.session.user._id}`]: "accepted",
+        },
+      });
+
+      res.json({ status: "ok" });
+    } catch (err) {
+      return next(err);
+    }
+  },
+];
+
+// Leave session
+exports.leave_session_post = [
+  body("gameId").escape(),
+  async (req, res, next) => {
+    try {
+      const game = await Game.findById(req.body.gameId).populate(["session"]);
+      if (game.session.rsvp_map.get(req.session.user._id) != "accepted") {
+        res.json({
+          status: "error",
+          errors: [
+            {
+              param: "NotJoined",
+              msg: "You haven't joined the session",
+            },
+          ],
+        });
+        return;
+      }
+
+      await Session.findByIdAndUpdate(game.session._id, {
+        $set: {
+          [`rsvp_map.${req.session.user._id}`]: "declined",
+        },
+      });
+      res.json({ status: "ok" });
+    } catch (err) {
+      return next(err);
+    }
+  },
+];
+
+// Remove a member from a session
+exports.remove_session_member_post = [
+  body("gameId").escape(),
+  body("memberId").escape(),
+  async (req, res, next) => {
+    try {
+      const game = await Game.findById(req.body.gameId).populate([
+        "admin",
+        "session",
+      ]);
+
+      // Member is not RSVPed
+      const member = await User.findById(req.body.memberId);
+      if (game.session.rsvp_map.get(req.body.memberId) !== "accepted") {
+        res.json({
+          status: "error",
+          errors: [
+            {
+              param: "MemberNotRSVPed",
+              msg: `${member.username} has not RSVPed for this game's session`,
+            },
+          ],
+        });
+        return;
+      }
+
+      // Unset member RSVP status in session
+      await Session.findByIdAndUpdate(game.session._id, {
+        $unset: {
+          [`rsvp_map.${req.body.memberId}`]: "",
+        },
+      });
+
+      // Create notification that RSVP was revoked
+      const notification = new Notification({
+        sender: game.admin._id,
+        recipient: req.body.memberId,
+        game: req.body.gameId,
+        label: "Session RSVP Revoked",
+        message: `${game.admin.username} revoked your RSVP status for a session of their poker game, ${game.name}, at ${game.session.time} on ${game.session.date}`,
+        date: Date.now(),
+      });
+
+      await notification.save();
+      res.json({ status: "ok", memberName: member.username });
+    } catch (err) {
+      return next(err);
+    }
+  },
+];
+
+// Invite a member to a session
+exports.send_rsvp_invite_post = [
+  body("gameId").escape(),
+  body("memberId").escape(),
+  async (req, res, next) => {
+    try {
+      const game = await Game.findById(req.body.gameId).populate([
+        "admin",
+        "session",
+      ]);
+
+      // Member not RSVPed or already invited
+      const member = await User.findById(req.body.memberId);
+      if (game.session.rsvp_map.get(req.body.memberId) === "accepted") {
+        res.json({
+          status: "error",
+          errors: [
+            {
+              param: "MemberRSVPed",
+              msg: `${member.username} has already RSVPed for this game's session`,
+            },
+          ],
+        });
+        return;
+      }
+
+      const invite = await Notification.findOne({
+        recipient: req.body.memberId,
+        label: "Session Invite",
+        game: req.body.gameId,
+      });
+
+      if (invite) {
+        res.json({
+          status: "error",
+          errors: [
+            {
+              param: "MemberInvitePending",
+              msg: `${member.username} has a pending invite for this game's session`,
+            },
+          ],
+        });
+        return;
+      }
+
+      // Set member RSVP status to invited in session
+      await Session.findByIdAndUpdate(game.session._id, {
+        $set: {
+          [`rsvp_map.${req.body.memberId}`]: "invited",
+        },
+      });
+
+      // Create notification to RSVP for the session!
+      const notification = new Notification({
+        sender: game.admin._id,
+        recipient: req.body.memberId,
+        game: req.body.gameId,
+        label: "Session Invite",
+        message: `${game.admin.username} asked you to RSVP for a session of their poker game, ${game.name}, at ${game.session.time} on ${game.session.date}`,
+        date: Date.now(),
+      });
+
+      await notification.save();
+      res.json({ status: "ok", memberName: member.username });
+    } catch (err) {
+      return next(err);
+    }
+  },
+];
+
+// Accept RSVP
+exports.member_accept_rsvp_post = [
+  body("gameId").escape(),
+  async (req, res, next) => {
+    try {
+      const invite = await Notification.findOneAndDelete({
+        recipient: req.session.user,
+        label: "Session Invite",
+        game: req.body.gameId,
+      });
+
+      if (!invite) {
+        res.json({
+          status: "error",
+          errors: [
+            {
+              param: "NoSessionInvite",
+              msg: "Cannot RSVP to game, you don't have an invite",
+            },
+          ],
+        });
+        return;
+      }
+
+      // Update game
+      const game = await Game.findById(req.body.gameId);
+      await Session.findByIdAndUpdate(game.session, {
+        $set: {
+          [`rsvp_map.${req.session.user._id}`]: "accepted",
+        },
+      });
+
+      res.json({ status: "ok", game: game.name });
+    } catch (err) {
+      return next(err);
+    }
+  },
+];
+
+// Decline RSVP
+exports.member_decline_rsvp_post = [
+  body("gameId").escape(),
+  async (req, res, next) => {
+    try {
+      const invite = await Notification.findOneAndDelete({
+        recipient: req.session.user,
+        label: "Session Invite",
+        game: req.body.gameId,
+      });
+
+      if (!invite) {
+        res.json({
+          status: "error",
+          errors: [
+            {
+              param: "NoSessionInvite",
+              msg: "Cannot decline to RSVP to game, you don't have an invite",
+            },
+          ],
+        });
+        return;
+      }
+
+      // Update game
+      const game = await Game.findById(req.body.gameId);
+      await Session.findByIdAndUpdate(game.session, {
+        $set: {
+          [`rsvp_map.${req.session.user._id}`]: "declined",
+        },
+      });
+      res.json({ status: "ok", game: game.name });
+    } catch (err) {
+      return next(err);
+    }
+  },
+];
+
+// Delete a session
+exports.delete_session_post = [
+  body("gameId").escape(),
+  body("userId").escape(),
+  async (req, res, next) => {
+    try {
+      // Delete session invites
+      await Notification.deleteMany({
+        game: req.body.gameId,
+        label: "Session Invite",
+      });
+
+      // Update game to remove session
+      const game = await Game.findByIdAndUpdate(req.body.gameId, {
+        $unset: { session: "" },
+      });
+
+      // Delete session
+      await Session.findByIdAndDelete(game.session);
+
+      res.json({ status: "ok" });
+    } catch (err) {
+      return next(err);
+    }
+  },
+];
+
 // Add a member
 exports.add_member_post = [
   // Validate and sanitize
@@ -237,6 +591,7 @@ exports.add_member_post = [
       const existing_invite = await Notification.findOne({
         recipient: user._id,
         game: req.body.gameId,
+        label: "Game Invite",
       });
 
       if (existing_invite) {
@@ -288,7 +643,7 @@ exports.session_form_post = [
   // Validate and sanitize
   body(
     "date",
-    "Required input date must be less than 20 lettes, numbers, periods, and/or spaces (not at start or end)"
+    "Required input date must be between 1 and 20 lettes, numbers, periods, and/or spaces (not at start or end)"
   )
     .trim()
     .isLength({ min: 1, max: 20 })
@@ -296,13 +651,16 @@ exports.session_form_post = [
     .escape(),
   body(
     "time",
-    "Required input time must be less than 20 letters, numbers, colons, and/or spaces (not at start or end)"
+    "Required input time must be between 1 and 20 letters, numbers, colons, and/or spaces (not at start or end)"
   )
     .trim()
     .isLength({ min: 1, max: 20 })
     .matches(/^[A-Za-z0-9: ]*$/)
     .escape(),
-  body("address", "Required input address must be less than 30 characters long")
+  body(
+    "address",
+    "Required input address must be between 1 and 30 characters long"
+  )
     .trim()
     .isLength({ min: 1, max: 30 })
     .escape(),
@@ -315,14 +673,15 @@ exports.session_form_post = [
       res.json({ status: "error", errors: validation_errors.errors });
       return;
     }
+
+    // Get game
+    const game = await Game.findById(req.body.gameId);
+
     // Using form to create new session
     if (!req.body.sessionId) {
       // Check that game doesn't already have session
       try {
-        const game = await Game.findById(req.body.gameId);
-        console.log(game);
-
-        if (game.session) {
+        if (game?.session) {
           validation_errors.errors.push({
             value: "",
             msg: "This game already has a session in progress",
@@ -339,9 +698,11 @@ exports.session_form_post = [
 
       // Create the session
       const session = new Session({
+        game: game._id,
         date: req.body.date,
         time: req.body.time,
         address: req.body.address,
+        rsvp_map: {},
       });
 
       // Save session
@@ -447,7 +808,7 @@ exports.game_form_post = [
         address: req.body.address,
         // computed property name syntax
         members: [req.session.user._id],
-        member_profit_map: { [req.session.user._id]: "0" },
+        member_profit_map: { [req.session.user._id]: 0 },
         admin: req.session.user._id,
       });
 
@@ -499,20 +860,34 @@ exports.leave_game_post = async (req, res, next) => {
         members: req.session.user._id,
       },
       $unset: {
-        [`member_profit_map.${req.session.user._id}`]: "",
+        [`member_profit_map.${req.session.user._id}`]: 0,
       },
     });
 
     // Remove game from user's list
+    const game = await Game.findById(req.body.gameId);
     await User.findByIdAndUpdate(req.session.user._id, {
       $pull: {
         games: req.body.gameId,
       },
     });
 
-    // Notify game admin
-    const game = await Game.findById(req.body.gameId);
+    // Remove user from session
+    if (game?.session) {
+      await Session.findByIdAndUpdate(game.session, {
+        $unset: {
+          [`rsvp_map.${req.session.user._id}`]: "",
+        },
+      });
+    }
 
+    // Remove any notifications that have to do with this user in this game
+    await Notification.deleteMany({
+      recipient: req.session.user._id,
+      game: req.body.gameId,
+    });
+
+    // Notify game admin
     const notification = new Notification({
       sender: req.session.user._id,
       recipient: game.admin,
@@ -543,7 +918,7 @@ exports.kick_member_post = [
           members: req.body.userId,
         },
         $unset: {
-          [`member_profit_map.${req.body.userId}`]: "",
+          [`member_profit_map.${req.body.userId}`]: 0,
         },
       });
 
@@ -554,9 +929,23 @@ exports.kick_member_post = [
         },
       });
 
-      // Notify member that they've been removed
+      // Remove user from session
       const game = await Game.findById(req.body.gameId).populate("admin");
+      if (game?.session) {
+        await Session.findByIdAndUpdate(game.session, {
+          $unset: {
+            [`rsvp_map.${req.body.userId}`]: "",
+          },
+        });
+      }
 
+      // Remove any notifications that have to do with this user in this game
+      await Notification.deleteMany({
+        recipient: req.body.userId,
+        game: req.body.gameId,
+      });
+
+      // Notify member that they've been removed
       const notification = new Notification({
         sender: game.admin._id,
         recipient: req.body.userId,
@@ -584,6 +973,21 @@ exports.delete_game_post = [
     try {
       // Delete game
       const game = await Game.findByIdAndDelete(req.body.gameId);
+
+      // Delete game session
+      if (game?.session) {
+        await Session.findByIdAndDelete(game.session);
+      }
+
+      // Delete any notifications for that game
+      await Notification.deleteMany({
+        game: req.body.gameId,
+      });
+
+      // Delete any posts for that game
+      await Post.deleteMany({
+        game: req.body.gameId,
+      });
 
       for (member of game.members) {
         // Delete game for all members' game lists

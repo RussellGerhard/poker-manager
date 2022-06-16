@@ -92,4 +92,27 @@ router.post("/create_session", game_controller.session_form_post);
 // POST update session
 router.post("/edit_session", game_controller.session_form_post);
 
+// TODO VERIFY ADMIN AND SESSION EXISTENCE
+router.post("/join_session", game_controller.join_session_post);
+
+// TODO VERIFY ADMIN AND SESSION EXISTENCE
+router.post("/leave_session", game_controller.leave_session_post);
+
+// TODO VERIFY ADMIN AND SESSION EXISTENCE
+router.post("/delete_session", game_controller.delete_session_post);
+
+// TODO VERIFY ADMIN AND SESSION EXISTENCE
+router.post(
+  "/remove_session_member",
+  game_controller.remove_session_member_post
+);
+
+// TODO VERIFY ADMIN AND SESSION EXISTENCE
+router.post("/send_rsvp_invite", game_controller.send_rsvp_invite_post);
+
+// TODO VERIFY MEMBER AND SESSION EXISTENCE
+router.post("/member_accept_rsvp", game_controller.member_accept_rsvp_post);
+
+// TODO VERIFY MEMBER AND SESSION EXISTENCE
+router.post("/member_decline_rsvp", game_controller.member_decline_rsvp_post);
 module.exports = router;

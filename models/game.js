@@ -8,7 +8,7 @@ var GameSchema = new Schema({
   session: { type: Schema.Types.ObjectId, ref: "Session" },
   // There's a better way to do this by populating map keys
   members: [{ type: Schema.Types.ObjectId, ref: "User" }],
-  member_profit_map: { type: Map, of: String },
+  member_profit_map: { type: Map, of: Number },
   admin: { type: Schema.Types.ObjectId, ref: "User" },
 });
 
