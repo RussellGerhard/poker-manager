@@ -16,11 +16,7 @@ var UserSchema = new Schema({
     maxLength: 25,
     index: { unique: true },
   },
-  verified: {
-    type: Boolean,
-    required: true,
-    default: false,
-  },
+  // Email verification would be good
   password: { type: String, required: true, maxLength: 25 },
   // Login attempt counter
   loginAttempts: { type: Number, required: true, default: 0 },

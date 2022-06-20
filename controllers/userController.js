@@ -2,9 +2,14 @@ const { body, validationResult } = require("express-validator");
 const User = require("../models/user");
 const Game = require("../models/game");
 const Notification = require("../models/notification");
+const Session = require("../models/session");
+const Post = require("../models/post");
+const Token = require("../models/token");
 const async = require("async");
 const bcrypt = require("bcrypt");
+const crypto = require("crypto");
 const he = require("he");
+const sendEmail = require("../utils/sendEmail");
 
 // Check for logged in user
 exports.login_get = async (req, res, next) => {
@@ -13,6 +18,16 @@ exports.login_get = async (req, res, next) => {
     res.json({ loggedIn: true, user: req.session.user });
   } else {
     res.json({ loggedIn: false });
+  }
+};
+
+// Get user's venmo username
+exports.venmo_username_get = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.session.user._id);
+    res.json({ status: "ok", venmoUsername: user.venmoUsername });
+  } catch (err) {
+    return next(err);
   }
 };
 
@@ -118,6 +133,21 @@ exports.change_password_post = [
       return;
     }
 
+    // If session then changing password
+    // Else we're resetting password from email link
+    var userId;
+    if (req.session?.user) {
+      userId = req.session.user._id;
+    } else {
+      const token = await Token.findOne({ token: req.body.token });
+      if (!token) {
+        res.json({
+          status: "error",
+          errors: [{ param: "tokenErro", msg: "The URL token is invalid" }],
+        });
+      }
+      userId = token.user;
+    }
     try {
       // hash password
       var hash = await bcrypt.hash(
@@ -126,7 +156,7 @@ exports.change_password_post = [
       );
 
       // update user
-      await User.findByIdAndUpdate(req.session.user._id, {
+      await User.findByIdAndUpdate(userId, {
         $set: {
           password: hash,
         },
@@ -143,13 +173,27 @@ exports.change_password_post = [
 exports.delete_account_post = async (req, res, next) => {
   try {
     // Delete and leave games (based on if user was admin)
-    const user = await User.findById(req.session.user._id);
+    const user = await User.findByIdAndDelete(req.session.user._id);
+
+    // Delete notifications
+    await Notification.deleteMany({ recipient: user._id });
+
+    // Delete or leave user's games
     for (gameId of user.games) {
       const game = await Game.findById(gameId);
       // If user is admin, delete game
       if (game.admin.equals(req.session.user._id)) {
         // Delete the game
         await Game.findByIdAndDelete(gameId);
+
+        // Delete game session if exists
+        await Session.findOneAndDelete({ game: gameId });
+
+        // Delete any messages in game
+        await Post.deleteMany({ game: gameId });
+
+        // Delete any notifications having to do with this game
+        await Notification.deleteMany({ game: gameId });
 
         // Delete game from all members' lists and notify them (except admin)
         for (member of game.members) {
@@ -182,6 +226,16 @@ exports.delete_account_post = async (req, res, next) => {
           },
         });
 
+        // Remove user from session
+        await Session.findByIdAndUpdate(game.session, {
+          $unset: {
+            [`rsvp_map.${req.session.user._id}`]: "",
+          },
+        });
+
+        // Delete posts by user
+        await Post.deleteMany({ author: req.session.user._id });
+
         // Notify admin
         const notification = new Notification({
           sender: req.session.user._id,
@@ -190,9 +244,9 @@ exports.delete_account_post = async (req, res, next) => {
           label: "Game Notice",
           message: `${
             req.session.user.username
-          } deleted their account, so they are no longer in your poker game: ${he.decode(
+          } deleted their account, so they are no longer in your poker game, ${he.decode(
             game.name
-          )}`,
+          )}, and all of their posts have been deleted`,
           date: Date.now(),
         });
 
@@ -201,9 +255,7 @@ exports.delete_account_post = async (req, res, next) => {
     }
 
     // Destroy session and delete user
-    const userId = req.session.user._id;
     await req.session.destroy();
-    await User.findByIdAndDelete(userId);
 
     // Delete session cookie
     res.clearCookie(process.env.SESS_NAME);
@@ -400,3 +452,84 @@ exports.signup_post = [
     );
   },
 ];
+
+// Send password reset link
+exports.send_password_link_post = [
+  body("email").escape(),
+  async (req, res, next) => {
+    try {
+      const user = await User.findOne({ email: req.body.email });
+      if (!user) {
+        res.json({
+          status: "error",
+          errors: [
+            {
+              param: "NoUser",
+              msg: "The email provided is not associated with an account",
+            },
+          ],
+        });
+        return;
+      }
+
+      // Check if user already has a token
+      var token = await Token.findOne({ user: user._id });
+      if (!token) {
+        var token = new Token({
+          user: user._id,
+          token: crypto.randomBytes(32).toString("hex"),
+        });
+        await token.save();
+      }
+
+      // Generate link for email
+      const link = `http://localhost:3001/api/password_reset/${token.token}`;
+      await sendEmail({
+        username: user.username,
+        recipient: user.email,
+        subject: "HomeGame: Password Reset",
+        link: link,
+      });
+
+      res.json({ status: "ok" });
+    } catch (err) {
+      res.json({
+        status: "error",
+        errors: [{ param: "emailError", msg: err.message }],
+      });
+      return;
+    }
+  },
+];
+
+// Validate link for password reset
+exports.validate_password_link_get = async (req, res, next) => {
+  const token = await Token.findOne({ token: req.params.token });
+  if (!token) {
+    res.send("Sorry, that link is expired!");
+    return;
+  } else {
+    res.redirect(301, `http://localhost:3000/password_reset/${token.token}`);
+  }
+};
+
+// Check that user session exists, if not, send back error
+exports.user_session_exists = async (req, res, next) => {
+  try {
+    if (!req.session?.user) {
+      res.json({
+        status: "error",
+        errors: [
+          {
+            param: "NoUserSession",
+            msg: "You must be logged in",
+          },
+        ],
+      });
+    } else {
+      next();
+    }
+  } catch (err) {
+    return next(err);
+  }
+};

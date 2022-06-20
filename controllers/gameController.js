@@ -15,6 +15,7 @@ exports.game_details_get = async (req, res, next) => {
     const game = await Game.findById(req.params.gameId).populate([
       "members",
       "session",
+      "admin",
     ]);
     game.members.sort((a, b) => {
       // Positive return means a after b
@@ -212,30 +213,6 @@ exports.delete_message_post = [
       // User is authed, so delete the post
       await Post.findByIdAndDelete(req.body.postId);
       res.json({ status: "ok" });
-    } catch (err) {
-      return next(err);
-    }
-  },
-];
-
-exports.verify_session_exists = [
-  body("gameId").escape(),
-  async (req, res, next) => {
-    try {
-      const game = await Game.findById(req.body.gameId);
-      if (!game?.session) {
-        res.json({
-          status: "error",
-          errors: [
-            {
-              param: "NoSession",
-              msg: "This game does not have an upcoming session",
-            },
-          ],
-        });
-      } else {
-        next();
-      }
     } catch (err) {
       return next(err);
     }
@@ -764,6 +741,8 @@ exports.game_form_post = [
     .trim()
     .isLength({ max: 20 })
     .escape(),
+  body("venmoEnabled").escape(),
+  body("venmoUsername").trim().escape(),
   async (req, res, next) => {
     // Get validation errors
     var validation_errors = validationResult(req);
@@ -774,10 +753,26 @@ exports.game_form_post = [
       return;
     }
 
-    // Using form to create new game
-    if (!req.body.gameId) {
-      // Check that user is not already admin of game with same name
-      try {
+    // Check that venmoUsername provided if venmoEnabled is on
+    if (req.body.venmoEnabled === "true") {
+      if (!req.body.venmoUsername) {
+        res.json({
+          status: "error",
+          errors: [
+            {
+              param: "NoBanker",
+              msg: "To enable Venmo, please provide the Venmo username of the banker for the game.",
+            },
+          ],
+        });
+        return;
+      }
+    }
+
+    try {
+      // Using form to create new game
+      if (!req.body.gameId) {
+        // Check that user is not already admin of game with same name
         const found_game = await Game.findOne({
           admin: req.session.user._id,
           name: req.body.name,
@@ -794,59 +789,43 @@ exports.game_form_post = [
           res.json({ status: "error", errors: validation_errors.errors });
           return;
         }
-      } catch (err) {
-        return next(err);
-      }
 
-      // Create the game
-      const game = new Game({
-        name: req.body.name,
-        game_type: req.body.game_type,
-        stakes: req.body.stakes,
-        date: req.body.date,
-        time: req.body.time,
-        address: req.body.address,
-        // computed property name syntax
-        members: [req.session.user._id],
-        member_profit_map: { [req.session.user._id]: 0 },
-        admin: req.session.user._id,
-      });
+        // Create the game
+        const game = new Game({
+          name: req.body.name,
+          game_type: req.body.game_type,
+          stakes: req.body.stakes,
+          venmoEnabled: req.body.venmoEnabled,
+          bankerVenmo: req.body.venmoUsername,
+          members: [req.session.user._id],
+          // computed property name syntax
+          member_profit_map: { [req.session.user._id]: 0 },
+          admin: req.session.user._id,
+        });
 
-      // Save game
-      game.save((err) => {
-        if (err) {
-          return next(err);
-        }
-      });
+        // Save game
+        await game.save();
 
-      // Add game to user list
-      User.findByIdAndUpdate(
-        req.session.user._id,
-        { $push: { games: game._id } },
-        (err) => {
-          if (err) {
-            return next(err);
-          }
-          res.json({ status: "ok", gameId: game._id });
-        }
-      );
-    } else {
-      try {
+        // Add game to user list
+        await User.findByIdAndUpdate(req.session.user._id, {
+          $push: { games: game._id },
+        });
+        res.json({ status: "ok", gameId: game._id });
+      } else {
         // Using form to update existing game
         await Game.findByIdAndUpdate(req.body.gameId, {
           $set: {
             name: req.body.name,
             game_type: req.body.game_type,
             stakes: req.body.stakes,
-            date: req.body.date,
-            time: req.body.time,
-            address: req.body.address,
+            venmoEnabled: req.body.venmoEnabled === "true" ? true : false,
+            bankerVenmo: req.body.venmoUsername,
           },
         });
         res.json({ status: "ok", gameId: req.body.gameId });
-      } catch (err) {
-        return next(err);
       }
+    } catch (err) {
+      return next(err);
     }
   },
 ];
@@ -1081,3 +1060,129 @@ exports.join_game_post = [
     }
   },
 ];
+
+// Submit cashout at end of session
+exports.submit_cashout_post = async (req, res, next) => {
+  try {
+    // Compute profit, update profit map in game
+    var net_profit;
+    const game = await Game.findById(req.body.gameId);
+    for (player of req.body.players) {
+      net_profit =
+        parseInt(req.body.player_cashout_map[player._id].out) -
+        parseInt(req.body.player_cashout_map[player._id].in);
+      await Game.findByIdAndUpdate(req.body.gameId, {
+        $set: {
+          [`member_profit_map.${player._id}`]:
+            game.member_profit_map.get(player._id) + net_profit,
+        },
+      });
+    }
+
+    // Delete session
+    await Session.findByIdAndDelete(game.session);
+
+    // Delete any notifications regarding the session
+    await Notification.deleteMany({
+      game: req.body.gameId,
+      label: "Session Invite",
+    });
+
+    res.json({ status: "ok" });
+  } catch (err) {
+    return next(err);
+  }
+};
+
+exports.session_exists = [
+  body("gameId").escape(),
+  async (req, res, next) => {
+    try {
+      const game = await Game.findById(req.body.gameId);
+      if (!game?.session) {
+        res.json({
+          status: "error",
+          errors: [
+            {
+              param: "NoSession",
+              msg: "This game does not have a session",
+            },
+          ],
+        });
+      } else {
+        next();
+      }
+    } catch (err) {
+      return next(err);
+    }
+  },
+];
+
+exports.is_admin = [
+  body("gameId").escape(),
+  async (req, res, next) => {
+    try {
+      const game = await Game.findById(req.body.gameId);
+      if (!game.admin.equals(req.session.user._id)) {
+        res.json({
+          status: "error",
+          errors: [
+            {
+              param: "NotAdmin",
+              msg: "You are not the admin of this game",
+            },
+          ],
+        });
+      } else {
+        next();
+      }
+    } catch (err) {
+      return next(err);
+    }
+  },
+];
+
+exports.is_member_post = [
+  body("gameId").escape(),
+  async (req, res, next) => {
+    try {
+      const game = await Game.findById(req.body.gameId);
+      if (!game.members.includes(req.session.user._id)) {
+        res.json({
+          status: "error",
+          errors: [
+            {
+              param: "NotMember",
+              msg: "You are not a member of this game",
+            },
+          ],
+        });
+      } else {
+        next();
+      }
+    } catch (err) {
+      return next(err);
+    }
+  },
+];
+
+exports.is_member_params = async (req, res, next) => {
+  try {
+    const game = await Game.findById(req.params.gameId);
+    if (!game.members.includes(req.session.user._id)) {
+      res.json({
+        status: "error",
+        errors: [
+          {
+            param: "NotMember",
+            msg: "You are not a member of this game",
+          },
+        ],
+      });
+    } else {
+      next();
+    }
+  } catch (err) {
+    return next(err);
+  }
+};
