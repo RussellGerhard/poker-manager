@@ -65,7 +65,11 @@ exports.logout_post = async (req, res, next) => {
 
 // Handle email change
 exports.change_email_post = [
-  body("email", "Email cannot be empty").trim().isLength({ min: 1 }).escape(),
+  body("email", "Please enter a valid email")
+    .trim()
+    .isLength({ min: 1 })
+    .isEmail()
+    .escape(),
   async (req, res, next) => {
     // Get validation errors
     var validation_errors = validationResult(req);
@@ -89,9 +93,13 @@ exports.change_email_post = [
 
 // Handle username change
 exports.change_username_post = [
-  body("username", "Username cannot be empty")
+  body(
+    "username",
+    "Username must be 3 to 20 letters, numbers, and/or underscores"
+  )
     .trim()
-    .isLength({ min: 1 })
+    .isLength({ min: 3, max: 20 })
+    .matches(/^[A-Za-z0-9_]*$/)
     .escape(),
   async (req, res, next) => {
     // Get validation errors
@@ -122,8 +130,12 @@ exports.change_username_post = [
 
 // Handle password change
 exports.change_password_post = [
-  body("password", "New password cannot be empty")
+  body(
+    "password",
+    "Password must be 8 to 20 characters with one uppercase and one lowercase letter, one number, and one symbol"
+  )
     .isLength({ min: 1 })
+    .isStrongPassword()
     .escape(),
   async (req, res, next) => {
     // Get validation errors
@@ -276,6 +288,19 @@ exports.notifications_get = async (req, res, next) => {
     return next(err);
   }
 };
+
+// Delete one notification
+exports.delete_notification_post = [
+  body("notificationId").escape(),
+  async (req, res, next) => {
+    try {
+      await Notification.findByIdAndDelete(req.body.notificationId);
+      res.json({ status: "ok" });
+    } catch (err) {
+      return next(err);
+    }
+  },
+];
 
 // Clear notifications
 exports.clear_notifications_post = async (req, res, next) => {
@@ -522,7 +547,7 @@ exports.user_session_exists = async (req, res, next) => {
         errors: [
           {
             param: "NoUserSession",
-            msg: "You must be logged in",
+            msg: "Your session has expired",
           },
         ],
       });

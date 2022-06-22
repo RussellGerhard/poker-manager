@@ -5,8 +5,10 @@ var GameSchema = new Schema({
   name: { type: String, required: true, maxlength: 25 },
   game_type: { type: String },
   stakes: { type: String },
+  max_buyin: { type: String },
   venmoEnabled: { type: Boolean },
   bankerVenmo: { type: String },
+  venmoMessage: { type: String, default: "Flowers...", maxLength: 50 },
   session: {
     type: Schema.Types.ObjectId,
     ref: "Session",

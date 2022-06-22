@@ -5,6 +5,7 @@ const User = require("../models/user");
 const Notification = require("../models/notification");
 const Post = require("../models/post");
 const he = require("he");
+const notification = require("../models/notification");
 
 // DONT CONFUSE req.session (user session for auth) with
 // game.session (upcoming meetup of a poker game), sorry!
@@ -741,8 +742,20 @@ exports.game_form_post = [
     .trim()
     .isLength({ max: 20 })
     .escape(),
+  body("max_buyin", "Max buyin must be less than 20 characters long")
+    .trim()
+    .isLength({ max: 20 })
+    .escape(),
   body("venmoEnabled").escape(),
-  body("venmoUsername").trim().escape(),
+  body("venmoUsername", "Please enter a valid Venmo username")
+    .if((value, { req }) => {
+      req.venmoEnabled === "true";
+    })
+    .trim()
+    .isLength({ min: 5, max: 30 })
+    .matches(/^[A-Za-z0-9-_]*$/)
+    .escape(),
+  body("venmoMessage").trim().escape(),
   async (req, res, next) => {
     // Get validation errors
     var validation_errors = validationResult(req);
@@ -762,6 +775,18 @@ exports.game_form_post = [
             {
               param: "NoBanker",
               msg: "To enable Venmo, please provide the Venmo username of the banker for the game.",
+            },
+          ],
+        });
+        return;
+      }
+      if (!req.body.venmoMessage) {
+        res.json({
+          status: "error",
+          errors: [
+            {
+              param: "NoMessage",
+              msg: "To enable Venmo, please provide a message under 50 characters for Venmo requests associated with your game",
             },
           ],
         });
@@ -795,8 +820,10 @@ exports.game_form_post = [
           name: req.body.name,
           game_type: req.body.game_type,
           stakes: req.body.stakes,
+          max_buyin: req.body.max_buyin,
           venmoEnabled: req.body.venmoEnabled,
           bankerVenmo: req.body.venmoUsername,
+          venmoMessage: req.body.venmoMessage,
           members: [req.session.user._id],
           // computed property name syntax
           member_profit_map: { [req.session.user._id]: 0 },
@@ -818,8 +845,10 @@ exports.game_form_post = [
             name: req.body.name,
             game_type: req.body.game_type,
             stakes: req.body.stakes,
+            max_buyin: req.body.max_buyin,
             venmoEnabled: req.body.venmoEnabled === "true" ? true : false,
             bankerVenmo: req.body.venmoUsername,
+            venmoMessage: req.body.venmoMessage,
           },
         });
         res.json({ status: "ok", gameId: req.body.gameId });
@@ -961,6 +990,7 @@ exports.delete_game_post = [
       // Delete any notifications for that game
       await Notification.deleteMany({
         game: req.body.gameId,
+        label: { $not: { $eq: "Venmo Cashout" } },
       });
 
       // Delete any posts for that game
@@ -1021,10 +1051,6 @@ exports.join_game_post = [
         });
       } else {
         // Add player to game
-
-        // Log
-        const game = await Game.findById(req.body.gameId);
-
         await Game.findByIdAndUpdate(req.body.gameId, {
           $push: {
             members: req.session.user._id,
@@ -1064,25 +1090,56 @@ exports.join_game_post = [
 // Submit cashout at end of session
 exports.submit_cashout_post = async (req, res, next) => {
   try {
-    // Compute profit, update profit map in game
-    var net_profit;
     const game = await Game.findById(req.body.gameId);
+    var net_profit, cashout, buyin;
     for (player of req.body.players) {
-      net_profit =
-        parseInt(req.body.player_cashout_map[player._id].out) -
-        parseInt(req.body.player_cashout_map[player._id].in);
+      // Compute profit, update profit map in game
+      buyin = parseInt(req.body.player_cashout_map[player._id].buyin);
+      cashout = parseInt(req.body.player_cashout_map[player._id].cashout);
+      net_profit = cashout - buyin;
       await Game.findByIdAndUpdate(req.body.gameId, {
         $set: {
           [`member_profit_map.${player._id}`]:
             game.member_profit_map.get(player._id) + net_profit,
         },
       });
+
+      // If using Venmo, send a notification with a venmo link
+      if (req.body.player_cashout_map[player._id].useVenmo) {
+        // link goes into message, and message is going to be used to SET INNER HTML
+        // very important that all of these input are escaped with BACKEND validation before use
+        // or user is exposed to XSS
+        const link = `https://venmo.com/?txn=charge&amp;audience=private&amp;recipients=${
+          game.bankerVenmo
+        }&amp;amount=${cashout}&amp;note=${game.venmoMessage.replace(
+          " ",
+          "%20"
+        )}`;
+        const message = `You cashed out of a session of ${req.session.user.username}'s poker game, ${game.name}, with $${cashout}. Here's a link to <a href=${link} target="_blank">request your cash</a> via Venmo.`;
+        const notification = new Notification({
+          sender: req.session.user._id,
+          recipient: player._id,
+          game: req.body.gameId,
+          label: "Venmo Cashout",
+          message: message,
+          date: Date.now(),
+        });
+
+        await notification.save();
+      }
     }
 
     // Delete session
     await Session.findByIdAndDelete(game.session);
 
-    // Delete any notifications regarding the session
+    // Remove session from game
+    await Game.findByIdAndUpdate(req.body.gameId, {
+      $unset: {
+        session: "",
+      },
+    });
+
+    // Delete any pending session invites
     await Notification.deleteMany({
       game: req.body.gameId,
       label: "Session Invite",

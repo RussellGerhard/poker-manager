@@ -4,6 +4,12 @@ var router = express.Router();
 var user_controller = require("../controllers/userController");
 var game_controller = require("../controllers/gameController");
 
+// THESE SHOULD ALL BE NOUNS, RESTful API maps URL to resource only (hence noun), HTTP request determines ACTION (verb)
+// CREATE is POST
+// READ is GET
+// UPDATE is PUT/PATCH
+// DELETE is DELETE
+
 // So much copy paste there has GOT to be a better way to use middleware
 // for multiple routes, no time though
 
@@ -83,6 +89,13 @@ router.get(
   "/notifications",
   user_controller.user_session_exists,
   user_controller.notifications_get
+);
+
+// POST delete notification
+router.post(
+  "/delete_notification",
+  user_controller.user_session_exists,
+  user_controller.delete_notification_post
 );
 
 // POST notifications clear
