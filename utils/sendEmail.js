@@ -4,10 +4,8 @@ const hbs = require("nodemailer-express-handlebars");
 async function sendEmail({ username, recipient, subject, link }) {
   try {
     const transporter = nodemailer.createTransport({
-      //   host: process.env.HOST,
       service: "gmail",
-      // port: 587,
-      //   secure: false,
+      secure: true,
       auth: {
         user: process.env.EMAIL,
         pass: process.env.EMAIL_APP_KEY,

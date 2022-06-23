@@ -3,6 +3,8 @@ var router = express.Router();
 
 var user_controller = require("../controllers/userController");
 var game_controller = require("../controllers/gameController");
+const nodemailer = require("nodemailer");
+const { body, validationResult } = require("express-validator");
 
 // THESE SHOULD ALL BE NOUNS, RESTful API maps URL to resource only (hence noun), HTTP request determines ACTION (verb)
 // CREATE is POST
@@ -10,8 +12,55 @@ var game_controller = require("../controllers/gameController");
 // UPDATE is PUT/PATCH
 // DELETE is DELETE
 
+// So, it's really much more of a RPC API if we're being honest
+
 // So much copy paste there has GOT to be a better way to use middleware
 // for multiple routes, no time though
+
+// POST contact form submit
+router.post("/submit_contact_form", [
+  // Validate and sanitize
+  body("name", "Name must be between 1 and 40 characters")
+    .trim()
+    .isLength({ min: 1, max: 40 })
+    .escape(),
+  body("message", "Message must be between 1 and 140 characters")
+    .trim()
+    .isLength({ min: 1, max: 140 })
+    .escape(),
+  async (req, res, next) => {
+    // Get validation errors
+    var validation_errors = validationResult(req);
+    if (!validation_errors.isEmpty()) {
+      res.json({ status: "error", errors: validation_errors.errors });
+      return;
+    }
+
+    // Send email
+    try {
+      const transporter = nodemailer.createTransport({
+        service: "gmail",
+        secure: true,
+        auth: {
+          user: process.env.EMAIL,
+          pass: process.env.EMAIL_APP_KEY,
+        },
+      });
+
+      console.log("hey");
+
+      transporter.sendMail({
+        from: process.env.EMAIL,
+        to: "russellgerhard1@gmail.com",
+        subject: "Home Game Contact Form Submission",
+        text: `${req.body.name} says: ${req.body.message}`,
+      });
+      res.json({ status: "ok" });
+    } catch (err) {
+      return next(err);
+    }
+  },
+]);
 
 // POST register
 router.post("/signup", user_controller.signup_post);
