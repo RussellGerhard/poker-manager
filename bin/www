@@ -6,7 +6,7 @@ var debug = require("debug")("poker-manager-server:server");
 var http = require("http");
 
 // Get port from env or use default
-var port = normalizePort(process.env.PORT || 3000);
+var port = normalizePort(process.env.PORT || 3001);
 server.set("port", port);
 
 // Create HTTP server

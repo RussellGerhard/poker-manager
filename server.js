@@ -68,6 +68,7 @@ const limiter = rateLimit({
   standardHeaders: true, // Return rate limit info in appropriate headers
   legacyHeaders: false,
 });
+
 // Apply limiter to api requests (static requests are unlimited)
 server.use("api", limiter);
 
@@ -92,7 +93,7 @@ server.use(express.json());
 server.use(express.urlencoded({ extended: false }));
 
 // Specify root folder for static website assets
-server.use(express.static(path.join(__dirname, "public")));
+// server.use(express.static(path.join(__dirname, "public")));
 
 // Routes
 server.use("/api", apiRouter);
