@@ -27,15 +27,13 @@ server.use(hpp());
 
 // Use cors in dev
 // Needed for cross-origin (serving front and back from different ports)
-if (process.env.ENVIRONMENT == "DEV") {
-  server.use(
-    cors({
-      origin: ["http://localhost:3000"],
-      methods: ["GET", "POST"],
-      credentials: true,
-    })
-  );
-}
+server.use(
+  cors({
+    origin: ["http://localhost:3000"],
+    methods: ["GET", "POST"],
+    credentials: true,
+  })
+);
 
 // Set up cookie sessions
 server.use(
