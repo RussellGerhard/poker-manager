@@ -93,7 +93,8 @@ server.use(express.json());
 server.use(express.urlencoded({ extended: false }));
 
 // Specify root folder for static website assets
-// server.use(express.static(path.join(__dirname, "public")));
+// NGINX is better at this
+server.use(express.static(path.join(__dirname, "public")));
 
 // Routes
 server.use("/api", apiRouter);
