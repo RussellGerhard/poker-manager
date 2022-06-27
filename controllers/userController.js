@@ -65,11 +65,7 @@ exports.logout_post = async (req, res, next) => {
 
 // Handle email change
 exports.change_email_post = [
-  body("email", "Please enter a valid email")
-    .trim()
-    .isLength({ min: 1 })
-    .isEmail()
-    .escape(),
+  body("email", "Please enter a valid email").trim().isEmail().escape(),
   async (req, res, next) => {
     // Get validation errors
     var validation_errors = validationResult(req);
