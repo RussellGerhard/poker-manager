@@ -37,18 +37,18 @@ if (process.env.ENVIRONMENT === "development") {
   );
 }
 
-// Must trust nginx proxy in production for secure cookie to be set
-if (process.env.ENVIRONMENT === "production") {
-  server.set("trust proxy", 1);
-}
-
 // Set up cookie sessions
+// We need to tell nginx we're using a reverse proxy
+// so it can look for x-forwarded-proto header to ID
+// the protocol used to connect with the proxy
+// this must be set on proxy_pass in nginx
 server.use(
   session({
     name: process.env.SESS_NAME,
     resave: false,
     saveUninitialized: false,
     secret: process.env.SESS_SECRET,
+    proxy: true,
     store: MongoStore.create({
       mongoUrl: `mongodb+srv://${process.env.DB_USERNAME}:${process.env.DB_PASSWORD}@cluster0.zfsde.mongodb.net/HomeGame?retryWrites=true&w=majority`,
       ttl: 24 * 60 * 60 * 1000,
