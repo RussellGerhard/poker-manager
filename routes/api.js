@@ -127,11 +127,7 @@ router.post(
 );
 
 // GET logged in user (for AuthContext on reload)
-router.get(
-  "/login",
-  user_controller.user_session_exists,
-  user_controller.login_get
-);
+router.get("/login", user_controller.login_get);
 
 // GET notifications for user
 router.get(
