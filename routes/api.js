@@ -47,6 +47,8 @@ router.post("/submit_contact_form", [
         },
       });
 
+      console.log("hey");
+
       transporter.sendMail({
         from: process.env.EMAIL,
         to: "russellgerhard1@gmail.com",
@@ -76,51 +78,101 @@ router.get(
 );
 
 // GET venmo username of user
-router.get("/venmo_username", user_controller.venmo_username_get);
+router.get(
+  "/venmo_username",
+  user_controller.user_session_exists,
+  user_controller.venmo_username_get
+);
 
 // POST change email
-router.post("/change_email", user_controller.change_email_post);
+router.post(
+  "/change_email",
+  user_controller.user_session_exists,
+  user_controller.change_email_post
+);
 
 // POST change username
-router.post("/change_username", user_controller.change_username_post);
+router.post(
+  "/change_username",
+  user_controller.user_session_exists,
+  user_controller.change_username_post
+);
 
 // POST change password
-router.post("/change_password", user_controller.change_password_post);
+router.post(
+  "/change_password",
+  user_controller.user_session_exists,
+  user_controller.change_password_post
+);
 
 // POST delete account
-router.post("/delete_account", user_controller.delete_account_post);
+router.post(
+  "/delete_account",
+  user_controller.user_session_exists,
+  user_controller.delete_account_post
+);
 
 // POST password check
-router.post("/password_check", user_controller.password_check_post);
+router.post(
+  "/password_check",
+  user_controller.user_session_exists,
+  user_controller.password_check_post
+);
 
 // POST logout
-router.post("/logout", user_controller.logout_post);
+router.post(
+  "/logout",
+  user_controller.user_session_exists,
+  user_controller.logout_post
+);
 
 // GET logged in user (for AuthContext on reload)
-router.get("/login", user_controller.login_get);
+router.get(
+  "/login",
+  user_controller.user_session_exists,
+  user_controller.login_get
+);
 
 // GET notifications for user
-router.get("/notifications", user_controller.notifications_get);
+router.get(
+  "/notifications",
+  user_controller.user_session_exists,
+  user_controller.notifications_get
+);
 
 // POST delete notification
-router.post("/delete_notification", user_controller.delete_notification_post);
+router.post(
+  "/delete_notification",
+  user_controller.user_session_exists,
+  user_controller.delete_notification_post
+);
 
 // POST notifications clear
-router.post("/clear_notifications", user_controller.clear_notifications_post);
+router.post(
+  "/clear_notifications",
+  user_controller.user_session_exists,
+  user_controller.clear_notifications_post
+);
 
 // POST profit update
 router.post(
   "/update_profit",
+  user_controller.user_session_exists,
   game_controller.is_admin,
   game_controller.update_profit_post
 );
 
 // GET game list for user
-router.get("/games", game_controller.game_list_get);
+router.get(
+  "/games",
+  user_controller.user_session_exists,
+  game_controller.game_list_get
+);
 
 // GET game details
 router.get(
   "/games/:gameId",
+  user_controller.user_session_exists,
   game_controller.is_member_params,
   game_controller.game_details_get
 );
@@ -128,6 +180,7 @@ router.get(
 // GET game posts
 router.get(
   "/posts/:gameId",
+  user_controller.user_session_exists,
   game_controller.is_member_params,
   game_controller.game_posts_get
 );
@@ -135,32 +188,44 @@ router.get(
 // POST message create
 router.post(
   "/new_message",
+  user_controller.user_session_exists,
   game_controller.is_member_post,
   game_controller.new_message_post
 );
 
 // POST message delete
-router.post("/delete_message", game_controller.delete_message_post);
+router.post(
+  "/delete_message",
+  user_controller.user_session_exists,
+  game_controller.delete_message_post
+);
 
 // POST add member
 router.post(
   "/add_member",
+  user_controller.user_session_exists,
   game_controller.is_admin,
   game_controller.add_member_post
 );
 
 router.post(
   "/kick_member",
+  user_controller.user_session_exists,
   game_controller.is_admin,
   game_controller.kick_member_post
 );
 
 // POST join game
-router.post("/join_game", game_controller.join_game_post);
+router.post(
+  "/join_game",
+  user_controller.user_session_exists,
+  game_controller.join_game_post
+);
 
 // POST leave
 router.post(
   "/leave_game",
+  user_controller.user_session_exists,
   game_controller.is_member_post,
   game_controller.leave_game_post
 );
@@ -168,16 +233,22 @@ router.post(
 // POST delete game
 router.post(
   "/delete_game",
+  user_controller.user_session_exists,
   game_controller.is_admin,
   game_controller.delete_game_post
 );
 
 // POST create game
-router.post("/create_game", game_controller.game_form_post);
+router.post(
+  "/create_game",
+  user_controller.user_session_exists,
+  game_controller.game_form_post
+);
 
 // POST update game
 router.post(
   "/edit_game",
+  user_controller.user_session_exists,
   game_controller.is_admin,
   game_controller.game_form_post
 );
@@ -185,6 +256,7 @@ router.post(
 // POST create session
 router.post(
   "/create_session",
+  user_controller.user_session_exists,
   game_controller.is_admin,
   game_controller.session_form_post
 );
@@ -192,6 +264,7 @@ router.post(
 // POST update session
 router.post(
   "/edit_session",
+  user_controller.user_session_exists,
   game_controller.is_admin,
   game_controller.session_exists,
   game_controller.session_form_post
@@ -199,6 +272,7 @@ router.post(
 
 router.post(
   "/join_session",
+  user_controller.user_session_exists,
   game_controller.is_member_post,
   game_controller.session_exists,
   game_controller.join_session_post
@@ -206,6 +280,7 @@ router.post(
 
 router.post(
   "/leave_session",
+  user_controller.user_session_exists,
   game_controller.is_member_post,
   game_controller.session_exists,
   game_controller.leave_session_post
@@ -213,6 +288,7 @@ router.post(
 
 router.post(
   "/delete_session",
+  user_controller.user_session_exists,
   game_controller.is_admin,
   game_controller.session_exists,
   game_controller.delete_session_post
@@ -220,6 +296,7 @@ router.post(
 
 router.post(
   "/submit_cashout",
+  user_controller.user_session_exists,
   game_controller.is_admin,
   game_controller.session_exists,
   game_controller.submit_cashout_post
@@ -227,6 +304,7 @@ router.post(
 
 router.post(
   "/remove_session_member",
+  user_controller.user_session_exists,
   game_controller.is_admin,
   game_controller.session_exists,
   game_controller.remove_session_member_post
@@ -234,6 +312,7 @@ router.post(
 
 router.post(
   "/send_rsvp_invite",
+  user_controller.user_session_exists,
   game_controller.is_admin,
   game_controller.session_exists,
   game_controller.send_rsvp_invite_post
@@ -241,6 +320,7 @@ router.post(
 
 router.post(
   "/member_accept_rsvp",
+  user_controller.user_session_exists,
   game_controller.is_member_post,
   game_controller.session_exists,
   game_controller.member_accept_rsvp_post
@@ -248,6 +328,7 @@ router.post(
 
 router.post(
   "/member_decline_rsvp",
+  user_controller.user_session_exists,
   game_controller.is_member_post,
   game_controller.session_exists,
   game_controller.member_decline_rsvp_post
