@@ -47,8 +47,6 @@ router.post("/submit_contact_form", [
         },
       });
 
-      console.log("hey");
-
       transporter.sendMail({
         from: process.env.EMAIL,
         to: "russellgerhard1@gmail.com",
