@@ -13,6 +13,7 @@ const sendEmail = require("../utils/sendEmail");
 
 // Check for logged in user
 exports.login_get = async (req, res, next) => {
+  console.log(req.session);
   if (req.session.user) {
     req.session.user.password = null;
     res.json({ loggedIn: true, user: req.session.user });

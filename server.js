@@ -56,7 +56,7 @@ server.use(
     cookie: {
       maxAge: parseInt(process.env.SESS_LIFETIME),
       sameSite: true,
-      secure: process.env.ENVIRONMENT == "PROD",
+      secure: process.env.ENVIRONMENT === "production",
     },
   })
 );
