@@ -56,10 +56,16 @@ server.use(
     cookie: {
       maxAge: parseInt(process.env.SESS_LIFETIME),
       sameSite: true,
-      secure: process.env.ENVIRONMENT === "production",
+      // secure: process.env.ENVIRONMENT === "production",
     },
   })
 );
+
+// Production settings for https
+if (process.env.ENVIRONMENT === "production") {
+  server.set("trust proxy", 1);
+  session.cookie.secure = true;
+}
 
 // Limit requests from same IP
 const limiter = rateLimit({
