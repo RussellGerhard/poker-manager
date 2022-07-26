@@ -619,13 +619,10 @@ exports.add_member_post = [
 // Create and update session
 exports.session_form_post = [
   // Validate and sanitize
-  body(
-    "date",
-    "Required input date must be between 1 and 20 lettes, numbers, periods, and/or spaces (not at start or end)"
-  )
+  body("date", "Required input date must be between 1 and 20 characters")
     .trim()
     .isLength({ min: 1, max: 20 })
-    .matches(/^[A-Za-z0-9\. ]*$/)
+    .matches(/^[A-Za-z0-9/\-\. ]*$/)
     .escape(),
   body(
     "time",

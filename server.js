@@ -13,6 +13,8 @@ const hpp = require("hpp");
 // const csurf = require("csurf"); Learn more about this, breaking dev rn
 const rateLimit = require("express-rate-limit");
 
+logger.debug();
+
 // Import routers
 const apiRouter = require("./routes/api");
 
@@ -62,6 +64,7 @@ server.use(
       maxAge: parseInt(process.env.SESS_LIFETIME),
       sameSite: "strict",
       secure: process.env.ENVIRONMENT === "production",
+      // PREVENTS XSS, MUST HAVE
       httpOnly: true,
     },
   })
