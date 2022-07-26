@@ -13,8 +13,6 @@ const hpp = require("hpp");
 // const csurf = require("csurf"); Learn more about this, breaking dev rn
 const rateLimit = require("express-rate-limit");
 
-logger.debug();
-
 // Import routers
 const apiRouter = require("./routes/api");
 
