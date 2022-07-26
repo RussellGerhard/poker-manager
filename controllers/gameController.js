@@ -622,7 +622,7 @@ exports.session_form_post = [
   body("date", "Required input date must be between 1 and 20 characters")
     .trim()
     .isLength({ min: 1, max: 20 })
-    .matches(/^[A-Za-z0-9/\-\. ]*$/)
+    .matches(/^[A-Za-z0-9\. ]*$/)
     .escape(),
   body(
     "time",
