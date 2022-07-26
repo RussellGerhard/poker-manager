@@ -622,7 +622,7 @@ exports.session_form_post = [
   body("date", "Required input date must be between 1 and 20 characters")
     .trim()
     .isLength({ min: 1, max: 20 })
-    .matches(/^[A-Za-z0-9\. ]*$/)
+    .matches(/^[A-Za-z0-9'’\. ]*$/)
     .escape(),
   body(
     "time",
@@ -725,7 +725,7 @@ exports.game_form_post = [
   )
     .trim()
     .isLength({ min: 5, max: 20 })
-    .matches(/^[A-Za-z0-9' ]*$/)
+    .matches(/^[A-Za-z0-9'’ ]*$/)
     .escape(),
   body(
     "game_type",
@@ -733,7 +733,7 @@ exports.game_form_post = [
   )
     .trim()
     .isLength({ max: 20 })
-    .matches(/^[A-Za-z0-9' ]*$/)
+    .matches(/^[A-Za-z0-9'’ ]*$/)
     .escape(),
   body("stakes", "Stakes must be less than 20 characters long")
     .trim()
